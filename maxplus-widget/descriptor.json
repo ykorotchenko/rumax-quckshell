@@ -1,0 +1,13 @@
+import QtQuick 2.15
+import org.kde.quick.shell 2.15
+
+Plugin {
+    mainQmlFile: "MaxPlusWidget.qml"
+    fallbackQmlFile: "Fallback.qml"
+    ...
+}
+
+Component.onCompleted: {
+    // Initialize connection to daemon
+    // The widget will connect to maxplus-daemon via D-Bus
+}

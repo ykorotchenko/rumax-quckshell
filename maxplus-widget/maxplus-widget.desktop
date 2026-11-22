@@ -1,0 +1,27 @@
+[Desktop Entry]
+Type=Application
+Encoding=UTF-8
+Name=Max+ Widget
+Comment=Max+ Messenger Quickshell Widget
+X-KDE-PluginInfo-Author=Max+ Team
+X-KDE-PluginInfo-Email=contact@max-plus.example
+X-KDE-PluginInfo-Name=maxplus-widget
+X-KDE-PluginInfo-Version=1.0.0
+X-KDE-PluginInfo-License=MIT
+X-KDE-PluginInfo-Website=https://max-plus.example
+X-KDE-PluginInfo-Category=Network
+Actions=OpenMainWindow;OpenChatWindow;
+
+[Desktop Entry]
+Name=Max+ Main
+Name[fr]=Max+ Principal
+Exec=maxplus-widget --main
+Icon=maxplus
+X-KDE-PluginInfo-Plugin=maxplus-widget
+
+[Desktop Entry]
+Name=Max+ Chat
+Name[fr]=Max+ Fenêtre discussion
+Exec=maxplus-widget --chat
+Icon=maxplus
+X-KDE-PluginInfo-Plugin=maxplus-widget

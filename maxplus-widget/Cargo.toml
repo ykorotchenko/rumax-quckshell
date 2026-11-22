@@ -1,0 +1,16 @@
+[package]
+name = "maxplus-widget"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[qml]
+imports = [
+    { module = "QtQuick", version = "2.15" },
+    { module = "QtQuick.Controls", version = "2.1" },
+    { module = "org.kde.quick.shell", version = "2.15" }
+]

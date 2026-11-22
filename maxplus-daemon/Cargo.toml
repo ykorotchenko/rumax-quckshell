@@ -1,0 +1,16 @@
+[package]
+name = "maxplus-daemon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rumax = { path = ".." }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time"] }
+futures-util = "0.3"
+log = "0.4"
+env_logger = "0.10"
+dbus = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlite = { version = "0.31", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
