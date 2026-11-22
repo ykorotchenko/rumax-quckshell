@@ -1,0 +1,1 @@
+cargo:rustc-env=MIME_TYPES_GENERATED_PATH=/home/yuf/Documents/rumax/maxplus-daemon/target/debug/build/mime_guess/4057245d634325b4/out/mime_types_generated.rs

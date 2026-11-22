@@ -1,0 +1,15 @@
+/home/yuf/Documents/rumax/maxplus-daemon/target/debug/build/uuid/44a5396b960b9ea6/out/uuid-44a5396b960b9ea6.d: /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/lib.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/macros.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/builder.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/error.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/non_nil.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/parser.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/fmt.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/timestamp.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/v4.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/rng.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/external.rs
+
+/home/yuf/Documents/rumax/maxplus-daemon/target/debug/build/uuid/44a5396b960b9ea6/out/libuuid-44a5396b960b9ea6.rmeta: /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/lib.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/macros.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/builder.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/error.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/non_nil.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/parser.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/fmt.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/timestamp.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/v4.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/rng.rs /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/external.rs
+
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/lib.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/macros.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/builder.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/error.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/non_nil.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/parser.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/fmt.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/timestamp.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/v4.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/rng.rs:
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/external.rs:

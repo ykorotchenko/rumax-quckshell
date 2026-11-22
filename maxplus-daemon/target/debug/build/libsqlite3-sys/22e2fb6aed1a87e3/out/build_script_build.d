@@ -1,0 +1,5 @@
+/home/yuf/Documents/rumax/maxplus-daemon/target/debug/build/libsqlite3-sys/22e2fb6aed1a87e3/out/build_script_build.d: /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libsqlite3-sys-0.28.0/build.rs
+
+/home/yuf/Documents/rumax/maxplus-daemon/target/debug/build/libsqlite3-sys/22e2fb6aed1a87e3/out/build_script_build: /home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libsqlite3-sys-0.28.0/build.rs
+
+/home/yuf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libsqlite3-sys-0.28.0/build.rs:

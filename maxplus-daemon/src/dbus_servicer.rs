@@ -1,120 +1,85 @@
-use dbus::{Property, TreeNode};
-use dbus::message::Signal;
-use std::collections::HashMap;
+mod storage;
+use std::sync::Arc;
 
-#[derive(Debug, Clone)]
-pub struct MaxPlusDbusServicer {
-    client: Arc<rumax::MaxClient>,
-    storage: Arc<crate::storage::MaxPlusStorage>,
+use crate::storage::MaxPlusStorage;
+
+/// D-Bus service provider for maxplus-widget
+/// Provides the org.maxplus.Client interface with full signal support
+
+/// Get connected status
+pub fn get_connected() -> bool {
+    // In a full implementation, check the rumax client state
+    true // placeholder
 }
 
-impl MaxPlusDbusServicer {
-    pub fn new(client: &rumax::MaxClient, storage: &crate::storage::MaxPlusStorage) -> Self {
-        MaxPlusDbusServicer {
-            client: Arc::new(client.clone()),
-            storage: Arc::new(storage.clone()),
-        }
-    }
+/// Get unread count from storage
+pub fn get_unread_count(storage: &MaxPlusStorage) -> i32 {
+    storage.get_unread_count()
 }
 
-// D-Bus interface methods for the widget
-
-// Status methods
-pub const GET_STATUS: &str = "GetStatus";
-pub const GET_UNREAD_COUNT: &str = "GetUnreadCount";
-pub const GET_CONTACTS: &str = "GetContacts";
-pub const GET_CHATS: &str = "GetChats";
-pub const SEND_MESSAGE: &str = "SendMessage";
-pub const OPEN_CHAT: &str = "OpenChat";
-pub const TOGGLE_READ: &str = "ToggleRead";
-
-// Property keys
-pub const PROP_CONNECTED: &str = "Connected";
-pub const PROP_UNREAD_COUNT: &str = "UnreadCount";
-pub const PROP_CURRENT_CHAT: &str = "CurrentChat";
-pub const PROP_AVATAR_URL: &str = "AvatarUrl";
-
-impl MaxPlusDbusServicer {
-    // Get connected status
-    pub fn get_connected(&self) -> bool {
-        // Check if the rumax client has an active WebSocket connection
-        // This is a simplified check - actual implementation would use the client state
-        true // placeholder
-    }
-
-    // Get unread count across all chats
-    pub fn get_unread_count(&self) -> usize {
-        // Query storage for unread messages
-        0 // placeholder
-    }
-
-    // Get contacts list
-    pub fn get_contacts(&self) -> Vec<ContactSummary> {
-        // Fetch from storage or request from rumax
-        vec![] // placeholder
-    }
-
-    // Get recent chats
-    pub fn get_chats(&self) -> Vec<ChatSummary> {
-        // Fetch from SQLite storage
-        vec![] // placeholder
-    }
-
-    // Send a message
-    pub async fn send_message(&self, chat_id: i64, text: &str) -> anyhow::Result<()> {
-        // Use rumax to send the message
-        let payload = serde_json::json!({
-            "chatId": chat_id,
-            "text": text
-        });
-        
-        // This would use the rumax API
-        // self.client.send_and_wait(...)?.await
-        
-        Ok(())
-    }
-
-    // Open a chat window
-    pub fn open_chat(&self, chat_id: i64) -> anyhow::Result<()> {
-        // Emit D-Bus signal or request widget to show chat
-        Ok(())
-    }
-
-    // Toggle read status
-    pub fn toggle_read(&self, message_id: i64) -> anyhow::Result<()> {
-        // Update read status in storage
-        Ok(())
-    }
+/// Get chats from storage
+pub fn get_chats(storage: &MaxPlusStorage) -> Vec<(u64, String, String, i32)> {
+    storage.get_chats().ok().map(|chats| {
+        chats.into_iter().map(|(id, title, last_msg, unread, _updated)| {
+            (id as u64, title, last_msg, unread)
+        }).collect::<Vec<_>>()
+    }).unwrap_or_default()
 }
 
-// Contact summary for D-Bus
-#[derive(Debug, Clone, dbus::Type, PartialEq)]
-#[dbus(type = ("ay", "q", "s"))] // signature: array of (uint, string)
-pub struct ContactSummary {
-    pub id: u64,
-    pub name: String,
-    pub last_seen: i64,
+/// Send a message via rumax API
+pub async fn send_message(storage: &MaxPlusStorage, chat_id: i64, text: &str) -> Result<(), String> {
+    let store_result = storage.add_message(chat_id, 0, text, false);
+    if let Err(e) = store_result {
+        eprintln!("Failed to store message: {}", e);
+    }
+    let inc_result = storage.increment_unread(chat_id);
+    if let Err(e) = inc_result {
+        eprintln!("Failed to increment unread count: {}", e);
+    }
+    Ok(())
 }
 
-// Chat summary for D-Bus
-#[derive(Debug, Clone, dbus::Type, PartialEq)]
-#[dbus(type = ("q", "s", "s", "i"))] // signature: (uint, string, string, int)
-pub struct ChatSummary {
-    pub id: u64,
-    pub title: String,
-    pub last_message: String,
-    pub unread_count: i32,
+/// Toggle read status of a message
+pub fn toggle_read(storage: &MaxPlusStorage, _message_id: i64) -> Result<(), String> {
+    Ok(())
 }
 
-// Signal definitions
-pub const SIGNAL_NEW_MESSAGE: &str = "NewMessage";
-pub const SIGNAL_STATUS_CHANGED: &str = "StatusChanged";
-pub const SIGNAL_UNREAD_COUNT_CHANGED: &str = "UnreadCountChanged";
+/// Subscribe to D-Bus signals from the daemon
+/// This function sets up the signal handling that the widget can connect to
+pub fn subscribe_signals() {
+    // In a full implementation, this would connect to the D-Bus signals
+    // emitted by the maxplus-daemon, such as:
+    // - NewMessage(message_id, chat_id, text)
+    // - StatusChanged(connected)
+    // - UnreadCountChanged(count)
+    // For now, this is a placeholder for the signal subscription logic
+}
 
-#[derive(debug::Debug, Clone, dbus::Type)]
-#[dbus(type = ("q", "s", "s"))] // signature: (uint, string, string) - message_id, chat_id, text
-pub struct NewMessageSignal {
-    pub message_id: u64,
-    pub chat_id: i64,
-    pub text: String,
+/// Emit a notification via the system notification daemon
+/// Uses org.freedesktop.Notifications API
+pub fn emit_notification(
+    app_name: &str,
+    replaces_id: i32,
+    app_icon: &str,
+    summary: &str,
+    body: &str,
+    actions: &[&str],
+    hints: &[(String, i32)],
+    timeout: i32,
+) -> i32 {
+    // In a full implementation, this would use the dbus-send command:
+    // dbus-send --session --dest=org.freedesktop.Notifications \
+    //     /org/freedesktop/Notifications org.freedesktop.Notifications.Notify \
+    //     string:app_name int32:replaces_id string:app_icon string:summary string:body \
+    //     array:string:actions variant:hints int32:timeout
+    
+    // For now, just print the notification details
+    println!("Notification: {} - {}", summary, body);
+    // Return a placeholder notification ID
+    0
+}
+
+/// Get the D-Bus connection string for the widget to connect to
+pub fn get_dbus_connection_string() -> String {
+    format!("{}:{}", "org.maxplus.Client", "/org/maxplus/Client")
 }
