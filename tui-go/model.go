@@ -24,6 +24,14 @@ const (
 	focusInput
 )
 
+type searchMode int
+
+const (
+	searchNone searchMode = iota
+	searchChats
+	searchMessages
+)
+
 type tickMsg time.Time
 type msgTickMsg time.Time
 
@@ -88,6 +96,11 @@ type model struct {
 
 	typing         bool
 	lastTypingSent time.Time
+
+	search           searchMode
+	searchQuery      string
+	msgSearchMatches []int // indices into m.messages
+	msgSearchIdx     int
 }
 
 func newModel(c *client) model {
@@ -261,6 +274,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.msgOffset += max(0, len(msgs)-oldLen)
 		}
 		m.clampScroll()
+		// invalidate stale search matches on message refresh
+		if len(m.msgSearchMatches) > 0 {
+			m.msgSearchMatches = nil
+			m.msgSearchIdx = 0
+		}
 		return m, nil
 
 	case sentMsg:
@@ -306,6 +324,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	if m.search != searchNone {
+		return m.handleSearchKey(msg)
+	}
+
 	// Global keys
 	switch msg.String() {
 	case "tab":
@@ -342,6 +364,167 @@ func (m *model) maybeSendTyping() tea.Cmd {
 	}
 	m.lastTypingSent = time.Now()
 	return m.sendTyping(m.activeChat.ID)
+}
+
+func (m model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		wasMsg := m.search == searchMessages
+		wasChat := m.search == searchChats
+		m.search = searchNone
+		m.searchQuery = ""
+		if wasMsg {
+			m.msgSearchMatches = nil
+			m.msgSearchIdx = 0
+		}
+		if wasChat {
+			m.clampChatScroll()
+		}
+		return m, nil
+	case "enter":
+		if m.search == searchChats {
+			chats := m.filteredChats()
+			if len(chats) > 0 {
+				idx := m.chatCursor
+				if idx < 0 || idx >= len(chats) {
+					idx = 0
+				}
+				c := chats[idx]
+				// restore cursor to full list index
+				for i, fc := range m.chats {
+					if fc.ID == c.ID {
+						m.chatCursor = i
+						break
+					}
+				}
+				m.search = searchNone
+				m.searchQuery = ""
+				m.activeChat = &c
+				m.messages = nil
+				m.msgErr = ""
+				m.msgOffset = 0
+				m.loadingMsg = true
+				m.typing = false
+				m.focus = focusInput
+				m.clampChatScroll()
+				return m, tea.Batch(m.fetchMessages(c.ID), m.markRead(c.ID), m.fetchTyping(c.ID))
+			}
+			m.search = searchNone
+			m.searchQuery = ""
+			return m, nil
+		}
+		// searchMessages
+		m.performMessageSearch()
+		m.search = searchNone
+		if len(m.msgSearchMatches) > 0 {
+			m.msgSearchIdx = 0
+			m.scrollToMsgMatch()
+		}
+		return m, nil
+	case "backspace":
+		if len(m.searchQuery) > 0 {
+			r := []rune(m.searchQuery)
+			m.searchQuery = string(r[:len(r)-1])
+			if m.search == searchChats {
+				m.clampChatCursorToFiltered()
+			}
+		}
+		return m, nil
+	case "ctrl+u":
+		m.searchQuery = ""
+		if m.search == searchChats {
+			m.clampChatCursorToFiltered()
+		}
+		return m, nil
+	case "up", "ctrl+p":
+		if m.search == searchChats {
+			if m.chatCursor > 0 {
+				m.chatCursor--
+				m.clampChatScroll()
+			}
+		}
+		return m, nil
+	case "down", "ctrl+n":
+		if m.search == searchChats {
+			chats := m.filteredChats()
+			if m.chatCursor < len(chats)-1 {
+				m.chatCursor++
+				m.clampChatScroll()
+			}
+		}
+		return m, nil
+	}
+
+	if msg.Type == tea.KeyRunes {
+		m.searchQuery += string(msg.Runes)
+		if m.search == searchChats {
+			m.clampChatCursorToFiltered()
+		}
+		return m, nil
+	}
+	if msg.Type == tea.KeySpace {
+		m.searchQuery += " "
+		if m.search == searchChats {
+			m.clampChatCursorToFiltered()
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) filteredChats() []chat {
+	if m.searchQuery == "" {
+		return m.chats
+	}
+	q := strings.ToLower(m.searchQuery)
+	var out []chat
+	for _, c := range m.chats {
+		if strings.Contains(strings.ToLower(c.Title), q) ||
+			strings.Contains(strings.ToLower(c.LastMessage), q) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (m *model) clampChatCursorToFiltered() {
+	m.clampChatScroll()
+}
+
+func (m *model) performMessageSearch() {
+	m.msgSearchMatches = nil
+	m.msgSearchIdx = 0
+	q := strings.ToLower(strings.TrimSpace(m.searchQuery))
+	if q == "" {
+		return
+	}
+	for i, msg := range m.messages {
+		if strings.Contains(strings.ToLower(msg.Text), q) ||
+			strings.Contains(strings.ToLower(msg.Sender), q) {
+			m.msgSearchMatches = append(m.msgSearchMatches, i)
+		}
+	}
+}
+
+func (m *model) scrollToMsgMatch() {
+	if len(m.msgSearchMatches) == 0 || m.msgSearchIdx < 0 || m.msgSearchIdx >= len(m.msgSearchMatches) {
+		return
+	}
+	// approximate: set msgOffset so target message is visible
+	target := m.msgSearchMatches[m.msgSearchIdx]
+	// msgOffset is lines from bottom; easier to set offset so target is near middle
+	total := len(m.messages)
+	if total == 0 {
+		return
+	}
+	// position from bottom
+	fromBottom := total - 1 - target
+	h := m.messageViewHeight()
+	m.msgOffset = fromBottom - h/2
+	if m.msgOffset < 0 {
+		m.msgOffset = 0
+	}
+	m.clampScroll()
 }
 
 func (m model) handleChatListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -383,11 +566,39 @@ func (m model) handleChatListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.clampChatScroll()
 		}
 		return m, nil
+	case "/":
+		m.search = searchChats
+		m.searchQuery = ""
+		m.chatCursor = 0
+		m.chatOffset = 0
+		return m, nil
+	case "n":
+		if len(m.msgSearchMatches) > 0 {
+			m.msgSearchIdx = (m.msgSearchIdx + 1) % len(m.msgSearchMatches)
+			m.scrollToMsgMatch()
+		}
+		return m, nil
+	case "N":
+		if len(m.msgSearchMatches) > 0 {
+			m.msgSearchIdx--
+			if m.msgSearchIdx < 0 {
+				m.msgSearchIdx = len(m.msgSearchMatches) - 1
+			}
+			m.scrollToMsgMatch()
+		}
+		return m, nil
 	}
 	return m, nil
 }
 
 func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "/" && m.input == "" && m.activeChat != nil {
+		m.search = searchMessages
+		m.searchQuery = ""
+		m.msgSearchMatches = nil
+		m.msgSearchIdx = 0
+		return m, nil
+	}
 	switch msg.String() {
 	case "esc":
 		m.focus = focusChats
@@ -451,9 +662,21 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) clampChatScroll() {
 	h := m.chatListHeight()
-	visibleItems := (h - 1) / 2 // title + 2 lines per item
+	headerLines := 1
+	listLen := len(m.chats)
+	if m.search == searchChats {
+		headerLines = 2
+		listLen = len(m.filteredChats())
+	}
+	visibleItems := (h - headerLines) / 2
 	if visibleItems < 1 {
 		visibleItems = 1
+	}
+	if m.chatCursor >= listLen {
+		m.chatCursor = listLen - 1
+	}
+	if m.chatCursor < 0 {
+		m.chatCursor = 0
 	}
 	if m.chatCursor < m.chatOffset {
 		m.chatOffset = m.chatCursor
@@ -633,10 +856,20 @@ func (m model) renderHeader() string {
 
 func (m model) renderFooter() string {
 	var parts []string
-	if m.focus == focusChats {
-		parts = []string{"↑/↓ навигация", "Enter открыть", "Tab ввод", "g/G начало/конец", "Ctrl+R обновить", "q выход"}
-	} else {
-		parts = []string{"Enter отправить", "Esc чаты", "↑/↓ скролл", "PgUp/PgDn", "Ctrl+U очистить", "Ctrl+R обновить", "Ctrl+C выход"}
+	switch m.search {
+	case searchChats:
+		parts = []string{"/" + m.searchQuery, "Enter открыть", "Esc отмена", "↑/↓ выбор", "Ctrl+U очистить"}
+	case searchMessages:
+		parts = []string{"/" + m.searchQuery, "Enter найти", "Esc отмена", "Ctrl+U очистить"}
+	default:
+		if m.focus == focusChats {
+			parts = []string{"/ поиск", "↑/↓ навигация", "Enter открыть", "Tab ввод", "g/G", "Ctrl+R", "q выход"}
+		} else {
+			parts = []string{"/ поиск", "Enter отправить", "Esc чаты", "↑/↓ скролл", "PgUp/PgDn", "Ctrl+R", "Ctrl+C выход"}
+		}
+		if len(m.msgSearchMatches) > 0 {
+			parts = append([]string{fmt.Sprintf("match %d/%d (n/N)", m.msgSearchIdx+1, len(m.msgSearchMatches))}, parts...)
+		}
 	}
 	if m.statusErr != "" {
 		parts = append([]string{"ERR: " + truncate(m.statusErr, 40)}, parts...)
@@ -658,13 +891,24 @@ func (m model) renderChatList(w, h int) string {
 		innerH = 1
 	}
 
+	displayChats := m.chats
+	searching := m.search == searchChats
+	if searching {
+		displayChats = m.filteredChats()
+	}
+
 	title := accentStyle.Render(" Чаты ")
-	if len(m.chats) > 0 {
+	if searching {
+		title += mutedStyle.Render(fmt.Sprintf("(%d/%d)", len(displayChats), len(m.chats)))
+	} else if len(m.chats) > 0 {
 		title += mutedStyle.Render(fmt.Sprintf("(%d)", len(m.chats)))
 	}
 
 	var lines []string
 	lines = append(lines, title)
+	if searching {
+		lines = append(lines, statusWarnStyle.Render("/"+m.searchQuery+"▌"))
+	}
 
 	if m.loading && len(m.chats) == 0 {
 		lines = append(lines, mutedStyle.Render(" Загрузка..."))
@@ -675,18 +919,42 @@ func (m model) renderChatList(w, h int) string {
 			lines = append(lines, statusWarnStyle.Render(" Нужна авторизация:"))
 			lines = append(lines, mutedStyle.Render(" maxplus-daemon login"))
 		}
+	} else if searching && len(displayChats) == 0 {
+		lines = append(lines, mutedStyle.Render(" Нет совпадений"))
 	} else {
-		visibleItems := (innerH - 1) / 2
+		headerLines := 1
+		if searching {
+			headerLines = 2
+		}
+		visibleItems := (innerH - headerLines) / 2
 		if visibleItems < 1 {
 			visibleItems = 1
 		}
-		end := m.chatOffset + visibleItems
-		if end > len(m.chats) {
-			end = len(m.chats)
+		// clamp cursor/offset to display list
+		cursor := m.chatCursor
+		if cursor >= len(displayChats) {
+			cursor = len(displayChats) - 1
 		}
-		for i := m.chatOffset; i < end; i++ {
-			c := m.chats[i]
-			lines = append(lines, m.renderChatItem(c, i == m.chatCursor, innerW))
+		if cursor < 0 {
+			cursor = 0
+		}
+		offset := m.chatOffset
+		if cursor < offset {
+			offset = cursor
+		}
+		if cursor >= offset+visibleItems {
+			offset = cursor - visibleItems + 1
+		}
+		if offset < 0 {
+			offset = 0
+		}
+		end := offset + visibleItems
+		if end > len(displayChats) {
+			end = len(displayChats)
+		}
+		for i := offset; i < end; i++ {
+			c := displayChats[i]
+			lines = append(lines, m.renderChatItem(c, i == cursor, innerW))
 		}
 	}
 
@@ -765,6 +1033,11 @@ func (m model) renderMessages(w, h int) string {
 		title += statusWarnStyle.Render(" печатает...")
 	} else if m.loadingMsg {
 		title += mutedStyle.Render(" загрузка...")
+	}
+	if m.search == searchMessages {
+		title += statusWarnStyle.Render(" /" + m.searchQuery + "▌")
+	} else if len(m.msgSearchMatches) > 0 {
+		title += mutedStyle.Render(fmt.Sprintf(" [%d/%d]", m.msgSearchIdx+1, len(m.msgSearchMatches)))
 	}
 
 	msgArea := m.renderMessageLines(innerW, msgH)
