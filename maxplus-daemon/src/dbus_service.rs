@@ -348,7 +348,14 @@ fn build_interface(f: &Factory<MTFn<()>, ()>, state: Arc<Mutex<Session>>, handle
                         let _ = guard.storage.set_chat_info(chat_id, &title, &sent_text, "", 0);
                         reply(m, json!({"ok": true, "chat_id": chat_id, "message_id": id}))
                     }
-                    Err(e) => reply(m, json!({"ok": false, "error": e.to_string()})),
+                    Err(e) => {
+                        let es = e.to_string();
+                        if es.contains("Not connected") || es.contains("Connection closed") || es.contains("ping") {
+                            let mut guard = state.lock().unwrap();
+                            guard.note_disconnected();
+                        }
+                        reply(m, json!({"ok": false, "error": es}))
+                    }
                 }
             })
             .inarg::<i64, _>("chat_id")
@@ -424,7 +431,13 @@ fn build_interface(f: &Factory<MTFn<()>, ()>, state: Arc<Mutex<Session>>, handle
                 });
                 match send_res {
                     Ok(()) => reply(m, json!({"ok": true})),
-                    Err(e) => reply(m, json!({"ok": false, "error": e})),
+                    Err(e) => {
+                        if e.contains("Not connected") || e.contains("Connection closed") || e.contains("ping") {
+                            let mut guard = state.lock().unwrap();
+                            guard.note_disconnected();
+                        }
+                        reply(m, json!({"ok": false, "error": e}))
+                    }
                 }
             })
             .inarg::<i64, _>("chat_id")
@@ -518,7 +531,14 @@ fn build_interface(f: &Factory<MTFn<()>, ()>, state: Arc<Mutex<Session>>, handle
                         let _ = guard.storage.set_chat_info(chat_id, &title, &last, "", 0);
                         reply(m, json!({"ok": true, "chat_id": chat_id, "message_id": id}))
                     }
-                    Err(e) => reply(m, json!({"ok": false, "error": e})),
+                    Err(e) => {
+                        let es = e.to_string();
+                        if es.contains("Not connected") || es.contains("Connection closed") || es.contains("ping") {
+                            let mut guard = state.lock().unwrap();
+                            guard.note_disconnected();
+                        }
+                        reply(m, json!({"ok": false, "error": es}))
+                    }
                 }
             })
             .inarg::<i64, _>("chat_id")
@@ -574,7 +594,14 @@ fn build_interface(f: &Factory<MTFn<()>, ()>, state: Arc<Mutex<Session>>, handle
                         }
                         reply(m, json!({"ok": true, "folders": out}))
                     }
-                    Err(e) => reply(m, json!({"ok": false, "error": e.to_string(), "folders": []})),
+                    Err(e) => {
+                        let es = e.to_string();
+                        if es.contains("Not connected") || es.contains("Connection closed") || es.contains("ping") {
+                            let mut guard = state.lock().unwrap();
+                            guard.note_disconnected();
+                        }
+                        reply(m, json!({"ok": false, "error": es, "folders": []}))
+                    }
                 }
             })
             .outarg::<&str, _>("reply"),
