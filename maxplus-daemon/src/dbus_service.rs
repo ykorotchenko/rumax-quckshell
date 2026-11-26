@@ -403,6 +403,39 @@ fn build_interface(f: &Factory<MTFn<()>, ()>, state: Arc<Mutex<Session>>, handle
         let state = state.clone();
         let handle = handle.clone();
         interface = interface.add_m(
+            f.method("SendTyping", (), move |m| {
+                let chat_id = m.msg.read1::<i64>().map_err(MethodErr::from)?;
+                let (client, authed) = {
+                    let s = state.lock().unwrap();
+                    let authed = s.status()["authenticated"].as_bool().unwrap_or(false)
+                        && s.status()["connected"].as_bool().unwrap_or(false);
+                    (s.client.clone(), authed)
+                };
+                if !authed {
+                    return reply(m, json!({"ok": false, "error": "Not connected"}));
+                }
+                let send_res = handle.block_on(async move {
+                    // Max protocol: opcode 65 is typing notification
+                    client
+                        .send_and_wait(65, serde_json::json!({"chatId": chat_id, "type": "TYPING"}), 0)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                });
+                match send_res {
+                    Ok(()) => reply(m, json!({"ok": true})),
+                    Err(e) => reply(m, json!({"ok": false, "error": e})),
+                }
+            })
+            .inarg::<i64, _>("chat_id")
+            .outarg::<&str, _>("reply"),
+        );
+    }
+
+    {
+        let state = state.clone();
+        let handle = handle.clone();
+        interface = interface.add_m(
             f.method("SendFile", (), move |m| {
                 let (chat_id, path, caption) = m.msg.read3::<i64, &str, &str>().map_err(MethodErr::from)?;
                 let path = path.trim().to_string();
