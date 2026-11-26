@@ -1,9 +1,10 @@
 # rumax / Max+
 
 ![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white)
+![Go](https://img.shields.io/badge/Go-00ADD8?style=flat&logo=go&logoColor=white)
 ![QML](https://img.shields.io/badge/QML-41CD52?style=flat&logo=qt&logoColor=white)
 ![D-Bus](https://img.shields.io/badge/D--Bus-00599C?style=flat&logo=linux&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-blue)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ![Max+ screenshot](assets/2026-11-26-173019_hyprshot.png)
 
@@ -12,8 +13,9 @@ Rust-клиент и инструменты для работы с [Max Messenge
 Репозиторий содержит:
 
 - **`rumax`** — Rust-библиотека/клиент для Max API (WebSocket, auth, messaging, files, chats).
-- **`maxplus-daemon/`** — фоновый демон на Rust: реальная авторизация Max, D-Bus API, локальный кэш SQLite, опциональный TUI.
+- **`maxplus-daemon/`** — фоновый демон на Rust: реальная авторизация Max, D-Bus API, локальный кэш SQLite.
 - **`maxplus-widget/`** — QML/Rust виджет для Quickshell, работающий через D-Bus демона.
+- **`tui-go/`** — полноэкранный TUI-мессенджер на Go (Bubble Tea + Lipgloss), работающий через тот же D-Bus демон.
 
 > Репозиторий находится в активной разработке. Часть функций и протокольных сценариев может быть неполной.
 
@@ -25,14 +27,22 @@ Rust-клиент и инструменты для работы с [Max Messenge
 - Получение чатов, истории сообщений, отправка текста/файлов, отметка прочтения, typing-индикатор, папки чатов.
 - Интеграция с Quickshell-панелью (Max+ виджет рядом с системными элементами).
 
+## Быстрый старт
+
+1. Соберите демон: `cd maxplus-daemon && cargo build --release`
+2. Авторизуйтесь: `./target/release/maxplus-daemon auth start +7...`
+3. Запустите сервис: `./target/release/maxplus-daemon serve`
+4. Подключите QML-виджет в ваш `shell.qml`.
+
 ## Структура репозитория
 
 ```text
 .
 ├── src/                  # rumax library
 ├── examples/             # примеры использования rumax
-├── maxplus-daemon/       # D-Bus daemon + cache + CLI/TUI
+├── maxplus-daemon/       # D-Bus daemon + cache + CLI
 ├── maxplus-widget/       # Quickshell/QML widget
+├── tui-go/               # Go fullscreen TUI (Bubble Tea)
 ├── Cargo.toml
 └── README.md
 ```
@@ -179,6 +189,29 @@ busctl --user --json=short call org.maxplus.Client /org/maxplus/Client org.maxpl
 ```bash
 pkill -x quickshell; quickshell >/tmp/quickshell.log 2>&1 & disown
 ```
+
+## Go TUI (`tui-go/`)
+
+![Max+ TUI screenshot](assets/2026-11-26-183343_hyprshot.png)
+
+Полноэкранный терминальный мессенджер на Go (Bubble Tea + Lipgloss), использующий тот же D-Bus сервис `org.maxplus.Client`.
+
+Возможности:
+
+- Список чатов с unread, последним сообщением и скроллом.
+- Диалог с датами, временем, именем отправителя в группах, выравниванием входящих/исходящих.
+- Подтверждения отправки/доставки/прочтения и индикатор `печатает...`.
+- Отправка сообщений, `MarkRead` при открытии чата, автообновление статуса/чатов/сообщений.
+
+Запуск:
+
+```bash
+cd tui-go
+go build -o maxplus-tui .
+./maxplus-tui
+```
+
+Перед запуском должен быть запущен и авторизован `maxplus-daemon serve`. Управление: `↑/↓` или `j/k`, `Enter`, `Tab`, `Esc`, `PgUp/PgDn`, `Ctrl+R`, `q`/`Ctrl+C`.
 
 ## Данные и конфигурация
 
