@@ -111,28 +111,39 @@ impl Session {
             return Ok(());
         }
         self.reconnect(false).await?;
-        let token = self.config.token.clone().unwrap();
-        self.client.set_token(token).await;
-        let sync_state = self.config.sync_state.clone().unwrap_or_default();
-        let (first, second, new_state) = self
-            .client
-            .sync(Some(sync_state))
-            .await
-            .context("Session sync failed")?;
+        let res: Result<()> = async {
+            let token = self
+                .config
+                .token
+                .clone()
+                .ok_or_else(|| anyhow!("No saved token"))?;
+            self.client.set_token(token).await;
+            let sync_state = self.config.sync_state.clone().unwrap_or_default();
+            let (first, second, new_state) = self
+                .client
+                .sync(Some(sync_state))
+                .await
+                .context("Session sync failed")?;
 
-        self.sync_chats_from(&first);
-        if let Some(second) = &second {
-            self.sync_chats_from(second);
-        }
-        self.update_user_id(&first, &second);
+            self.sync_chats_from(&first);
+            if let Some(second) = &second {
+                self.sync_chats_from(second);
+            }
+            self.update_user_id(&first, &second);
 
-        if let Some(token) = self.client.get_token().await {
-            self.config.token = Some(token);
+            if let Some(token) = self.client.get_token().await {
+                self.config.token = Some(token);
+            }
+            self.config.sync_state = Some(new_state);
+            self.config.last_login = Some(now_secs());
+            self.config.save()?;
+            Ok(())
         }
-        self.config.sync_state = Some(new_state);
-        self.config.last_login = Some(now_secs());
-        self.config.save()?;
-        Ok(())
+        .await;
+        if res.is_err() {
+            self.connected = false;
+        }
+        res
     }
 
     /// Step 1 of login: request an SMS code for `phone`.

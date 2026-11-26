@@ -3,8 +3,11 @@ use anyhow::{anyhow, Context, Result};
 use dbus::tree::{Factory, MTFn, MethodErr, MethodInfo, MethodResult};
 use dbus::{BusType, Connection, NameFlag};
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use tokio::runtime::Handle;
+
+static RECONNECTING: AtomicBool = AtomicBool::new(false);
 
 type Info<'a> = &'a MethodInfo<'a, MTFn<()>, ()>;
 
@@ -30,6 +33,26 @@ pub fn start_with_db_path(db_path: String) -> Result<()> {
 }
 
 type TypingState = Arc<Mutex<std::collections::HashMap<i64, i64>>>; // chat_id -> expires_unix_secs
+
+fn trigger_reconnect(state: Arc<Mutex<Session>>, handle: Handle) {
+    if RECONNECTING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    handle.clone().spawn(async move {
+        let st = state.clone();
+        let h = handle.clone();
+        let res = tokio::task::spawn_blocking(move || {
+            let mut g = st.lock().unwrap();
+            h.block_on(g.restore())
+        }).await;
+        match res {
+            Ok(Ok(())) => eprintln!("Max+ reconnect: restored"),
+            Ok(Err(e)) => eprintln!("Max+ reconnect failed: {}", e),
+            Err(e) => eprintln!("Max+ reconnect task error: {}", e),
+        }
+        RECONNECTING.store(false, Ordering::SeqCst);
+    });
+}
 
 fn start_with_state(state: Arc<Mutex<Session>>, handle: Handle) -> Result<()> {
     let typing: TypingState = Arc::new(Mutex::new(std::collections::HashMap::new()));
@@ -67,6 +90,59 @@ fn start_with_state(state: Arc<Mutex<Session>>, handle: Handle) -> Result<()> {
                     }
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            }
+        });
+    }
+
+    // Auto-reconnect loop: if authenticated but disconnected, try restore with backoff.
+    {
+        let state2 = state.clone();
+        let handle2 = handle.clone();
+        handle.spawn(async move {
+            let mut backoff = 5u64;
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(backoff)).await;
+                let (should_try, authed) = {
+                    let g = state2.lock().unwrap();
+                    let st = g.status();
+                    let authed = st.get("authenticated").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let connected = st.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
+                    (authed && !connected, authed)
+                };
+                if !authed {
+                    backoff = 15;
+                    continue;
+                }
+                if !should_try {
+                    backoff = 15;
+                    continue;
+                }
+                if RECONNECTING.swap(true, Ordering::SeqCst) {
+                    backoff = 10;
+                    continue;
+                }
+                eprintln!("Max+ auto-reconnect: attempting restore...");
+                let st = state2.clone();
+                let h = handle2.clone();
+                let res = tokio::task::spawn_blocking(move || {
+                    let mut g = st.lock().unwrap();
+                    h.block_on(g.restore())
+                }).await;
+                match res {
+                    Ok(Ok(())) => {
+                        eprintln!("Max+ auto-reconnect: restored");
+                        backoff = 15;
+                    }
+                    Ok(Err(e)) => {
+                        eprintln!("Max+ auto-reconnect failed: {}", e);
+                        backoff = (backoff * 2).min(60);
+                    }
+                    Err(e) => {
+                        eprintln!("Max+ auto-reconnect task error: {}", e);
+                        backoff = (backoff * 2).min(60);
+                    }
+                }
+                RECONNECTING.store(false, Ordering::SeqCst);
             }
         });
     }
@@ -353,6 +429,8 @@ fn build_interface(f: &Factory<MTFn<()>, ()>, state: Arc<Mutex<Session>>, handle
                         if es.contains("Not connected") || es.contains("Connection closed") || es.contains("ping") {
                             let mut guard = state.lock().unwrap();
                             guard.note_disconnected();
+                            drop(guard);
+                            trigger_reconnect(state.clone(), handle.clone());
                         }
                         reply(m, json!({"ok": false, "error": es}))
                     }
@@ -435,6 +513,8 @@ fn build_interface(f: &Factory<MTFn<()>, ()>, state: Arc<Mutex<Session>>, handle
                         if e.contains("Not connected") || e.contains("Connection closed") || e.contains("ping") {
                             let mut guard = state.lock().unwrap();
                             guard.note_disconnected();
+                            drop(guard);
+                            trigger_reconnect(state.clone(), handle.clone());
                         }
                         reply(m, json!({"ok": false, "error": e}))
                     }
@@ -536,6 +616,8 @@ fn build_interface(f: &Factory<MTFn<()>, ()>, state: Arc<Mutex<Session>>, handle
                         if es.contains("Not connected") || es.contains("Connection closed") || es.contains("ping") {
                             let mut guard = state.lock().unwrap();
                             guard.note_disconnected();
+                            drop(guard);
+                            trigger_reconnect(state.clone(), handle.clone());
                         }
                         reply(m, json!({"ok": false, "error": es}))
                     }
@@ -599,6 +681,8 @@ fn build_interface(f: &Factory<MTFn<()>, ()>, state: Arc<Mutex<Session>>, handle
                         if es.contains("Not connected") || es.contains("Connection closed") || es.contains("ping") {
                             let mut guard = state.lock().unwrap();
                             guard.note_disconnected();
+                            drop(guard);
+                            trigger_reconnect(state.clone(), handle.clone());
                         }
                         reply(m, json!({"ok": false, "error": es, "folders": []}))
                     }
