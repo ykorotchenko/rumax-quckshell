@@ -1,0 +1,11 @@
+# Явно указываем, что QML — это QML, а не HTML
+*.qml linguist-language=QML
+
+# Исключаем из статистики сгенерированные файлы и зависимости
+target/** linguist-vendored
+node_modules/** linguist-vendored
+*.lock linguist-generated
+Cargo.lock linguist-generated
+
+# Если хочешь, чтобы Rust был основным, можно явно указать
+*.rs linguist-detectable=true

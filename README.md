@@ -1,5 +1,12 @@
 # rumax / Max+
 
+![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white)
+![QML](https://img.shields.io/badge/QML-41CD52?style=flat&logo=qt&logoColor=white)
+![D-Bus](https://img.shields.io/badge/D--Bus-00599C?style=flat&logo=linux&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
+![Max+ screenshot](assets/2026-11-26-173019_hyprshot.png)
+
 Rust-клиент и инструменты для работы с [Max Messenger](https://max.ru).
 
 Репозиторий содержит:
