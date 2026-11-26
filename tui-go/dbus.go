@@ -148,6 +148,19 @@ type chatsReply struct {
 	Chats []chat `json:"chats"`
 }
 
+type foldersReply struct {
+	OK      bool     `json:"ok"`
+	Error   string   `json:"error"`
+	Folders []folder `json:"folders"`
+}
+
+type folder struct {
+	ID      string        `json:"id"`
+	Title   string        `json:"title"`
+	Include []interface{} `json:"include"`
+	Filters []interface{} `json:"filters"`
+}
+
 type messagesReply struct {
 	OK       bool      `json:"ok"`
 	Error    string    `json:"error"`
@@ -248,4 +261,15 @@ func (c *client) SendTyping(chatID int64) error {
 		return err
 	}
 	return checkOK(r.OK, r.Error)
+}
+
+func (c *client) GetFolders() ([]folder, error) {
+	var r foldersReply
+	if err := decode(c, "GetFolders", &r); err != nil {
+		return nil, err
+	}
+	if err := checkOK(r.OK, r.Error); err != nil {
+		return nil, err
+	}
+	return r.Folders, nil
 }

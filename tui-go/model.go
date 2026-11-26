@@ -69,6 +69,11 @@ type sentTypingMsg struct {
 	err error
 }
 
+type foldersMsg struct {
+	folders []folder
+	err     error
+}
+
 type model struct {
 	client *client
 
@@ -82,6 +87,9 @@ type model struct {
 	chats      []chat
 	chatCursor int
 	chatOffset int
+
+	folders   []folder
+	folderIdx int
 
 	activeChat *chat
 	messages   []message
@@ -112,7 +120,7 @@ func newModel(c *client) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.fetchStatus(), m.fetchChats(), tick(), msgTick())
+	return tea.Batch(m.fetchStatus(), m.fetchChats(), m.fetchFolders(), tick(), msgTick())
 }
 
 func tick() tea.Cmd {
@@ -134,6 +142,13 @@ func (m model) fetchChats() tea.Cmd {
 	return func() tea.Msg {
 		chats, err := m.client.GetChats()
 		return chatsMsg{chats: chats, err: err}
+	}
+}
+
+func (m model) fetchFolders() tea.Cmd {
+	return func() tea.Msg {
+		folders, err := m.client.GetFolders()
+		return foldersMsg{folders: folders, err: err}
 	}
 }
 
@@ -181,7 +196,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		cmds := []tea.Cmd{tick(), m.fetchStatus(), m.fetchChats()}
+		cmds := []tea.Cmd{tick(), m.fetchStatus(), m.fetchChats(), m.fetchFolders()}
 		return m, tea.Batch(cmds...)
 
 	case msgTickMsg:
@@ -213,12 +228,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.chats = msg.chats
 		// keep cursor in bounds
-		if len(m.chats) == 0 {
+		display := m.displayChats()
+		if len(display) == 0 {
 			m.chatCursor = 0
 			m.chatOffset = 0
 		} else {
-			if m.chatCursor >= len(m.chats) {
-				m.chatCursor = len(m.chats) - 1
+			if m.chatCursor >= len(display) {
+				m.chatCursor = len(display) - 1
 			}
 			if m.chatCursor < 0 {
 				m.chatCursor = 0
@@ -235,6 +251,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.clampChatScroll()
+		return m, nil
+
+	case foldersMsg:
+		if msg.err == nil {
+			m.folders = msg.folders
+			if m.folderIdx >= len(m.folders) {
+				m.folderIdx = 0
+			}
+			m.clampChatScroll()
+		}
 		return m, nil
 
 	case messagesMsg:
@@ -472,19 +498,99 @@ func (m model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) filteredChats() []chat {
-	if m.searchQuery == "" {
+func folderIncludesChat(f folder, chatID int64) bool {
+	for _, v := range f.Include {
+		switch n := v.(type) {
+		case float64:
+			if int64(n) == chatID {
+				return true
+			}
+		case int64:
+			if n == chatID {
+				return true
+			}
+		case int:
+			if int64(n) == chatID {
+				return true
+			}
+		case json.Number:
+			if id, err := n.Int64(); err == nil && id == chatID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func folderHasFilter(f folder, want int) bool {
+	for _, v := range f.Filters {
+		switch n := v.(type) {
+		case float64:
+			if int(n) == want {
+				return true
+			}
+		case int:
+			if n == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (m model) folderChats() []chat {
+	if len(m.folders) == 0 || m.folderIdx < 0 || m.folderIdx >= len(m.folders) {
 		return m.chats
+	}
+	f := m.folders[m.folderIdx]
+	// "All" folder: empty include and empty filters
+	if len(f.Include) == 0 && len(f.Filters) == 0 {
+		return m.chats
+	}
+	if len(f.Include) > 0 {
+		var out []chat
+		for _, c := range m.chats {
+			if folderIncludesChat(f, c.ID) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	// filter-only folder (e.g. channels filters:[2]) - best effort
+	if folderHasFilter(f, 2) {
+		var out []chat
+		for _, c := range m.chats {
+			k := strings.ToLower(c.Kind)
+			if k == "channel" || k == "channels" {
+				out = append(out, c)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	// fallback: show all rather than hiding everything
+	return m.chats
+}
+
+func (m model) displayChats() []chat {
+	base := m.folderChats()
+	if m.search != searchChats || m.searchQuery == "" {
+		return base
 	}
 	q := strings.ToLower(m.searchQuery)
 	var out []chat
-	for _, c := range m.chats {
+	for _, c := range base {
 		if strings.Contains(strings.ToLower(c.Title), q) ||
 			strings.Contains(strings.ToLower(c.LastMessage), q) {
 			out = append(out, c)
 		}
 	}
 	return out
+}
+
+func (m model) filteredChats() []chat {
+	return m.displayChats()
 }
 
 func (m *model) clampChatCursorToFiltered() {
@@ -538,16 +644,18 @@ func (m model) handleChatListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down", "j":
-		if m.chatCursor < len(m.chats)-1 {
+		chats := m.displayChats()
+		if m.chatCursor < len(chats)-1 {
 			m.chatCursor++
 			m.clampChatScroll()
 		}
 		return m, nil
 	case "enter":
-		if len(m.chats) == 0 || m.chatCursor < 0 || m.chatCursor >= len(m.chats) {
+		chats := m.displayChats()
+		if len(chats) == 0 || m.chatCursor < 0 || m.chatCursor >= len(chats) {
 			return m, nil
 		}
-		c := m.chats[m.chatCursor]
+		c := chats[m.chatCursor]
 		m.activeChat = &c
 		m.messages = nil
 		m.msgErr = ""
@@ -561,8 +669,28 @@ func (m model) handleChatListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clampChatScroll()
 		return m, nil
 	case "G":
-		if len(m.chats) > 0 {
-			m.chatCursor = len(m.chats) - 1
+		chats := m.displayChats()
+		if len(chats) > 0 {
+			m.chatCursor = len(chats) - 1
+			m.clampChatScroll()
+		}
+		return m, nil
+	case "left", "h", "[":
+		if len(m.folders) > 0 {
+			m.folderIdx--
+			if m.folderIdx < 0 {
+				m.folderIdx = len(m.folders) - 1
+			}
+			m.chatCursor = 0
+			m.chatOffset = 0
+			m.clampChatScroll()
+		}
+		return m, nil
+	case "right", "l", "]":
+		if len(m.folders) > 0 {
+			m.folderIdx = (m.folderIdx + 1) % len(m.folders)
+			m.chatCursor = 0
+			m.chatOffset = 0
 			m.clampChatScroll()
 		}
 		return m, nil
@@ -663,10 +791,12 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) clampChatScroll() {
 	h := m.chatListHeight()
 	headerLines := 1
-	listLen := len(m.chats)
+	if len(m.folders) > 0 {
+		headerLines++
+	}
+	listLen := len(m.displayChats())
 	if m.search == searchChats {
-		headerLines = 2
-		listLen = len(m.filteredChats())
+		headerLines++ // search line
 	}
 	visibleItems := (h - headerLines) / 2
 	if visibleItems < 1 {
@@ -863,7 +993,7 @@ func (m model) renderFooter() string {
 		parts = []string{"/" + m.searchQuery, "Enter найти", "Esc отмена", "Ctrl+U очистить"}
 	default:
 		if m.focus == focusChats {
-			parts = []string{"/ поиск", "↑/↓ навигация", "Enter открыть", "Tab ввод", "g/G", "Ctrl+R", "q выход"}
+			parts = []string{"/ поиск", "←/→ папки", "↑/↓ навигация", "Enter открыть", "Tab ввод", "Ctrl+R", "q выход"}
 		} else {
 			parts = []string{"/ поиск", "Enter отправить", "Esc чаты", "↑/↓ скролл", "PgUp/PgDn", "Ctrl+R", "Ctrl+C выход"}
 		}
@@ -875,6 +1005,92 @@ func (m model) renderFooter() string {
 		parts = append([]string{"ERR: " + truncate(m.statusErr, 40)}, parts...)
 	}
 	return helpStyle.Width(m.width).Render(strings.Join(parts, "  •  "))
+}
+
+func (m model) renderFolderTabs(width int) string {
+	if len(m.folders) == 0 {
+		return ""
+	}
+	var parts []string
+	for i, f := range m.folders {
+		title := f.Title
+		if title == "" {
+			title = f.ID
+		}
+		label := " " + title + " "
+		if i == m.folderIdx {
+			parts = append(parts, accentStyle.Render(label))
+		} else {
+			parts = append(parts, mutedStyle.Render(label))
+		}
+	}
+	line := strings.Join(parts, "")
+	// truncate to width
+	if lipgloss.Width(line) > width {
+		// show window around selected
+		var left, right []string
+		// build selected
+		sel := m.folders[m.folderIdx]
+		selTitle := sel.Title
+		if selTitle == "" {
+			selTitle = sel.ID
+		}
+		selLabel := accentStyle.Render(" " + selTitle + " ")
+		selW := lipgloss.Width(selLabel)
+		budget := width - selW - 2
+		if budget < 0 {
+			budget = 0
+		}
+		// add neighbors
+		l, r := m.folderIdx-1, m.folderIdx+1
+		leftW, rightW := 0, 0
+		for budget > 0 && (l >= 0 || r < len(m.folders)) {
+			added := false
+			if r < len(m.folders) {
+				t := m.folders[r].Title
+				if t == "" {
+					t = m.folders[r].ID
+				}
+				lbl := mutedStyle.Render(" " + t + " ")
+				w := lipgloss.Width(lbl)
+				if rightW+w <= budget/2+budget%2 || l < 0 {
+					if rightW+w <= budget {
+						right = append(right, lbl)
+						rightW += w
+						budget -= w
+						added = true
+					}
+				}
+				r++
+			}
+			if l >= 0 && budget > 0 {
+				t := m.folders[l].Title
+				if t == "" {
+					t = m.folders[l].ID
+				}
+				lbl := mutedStyle.Render(" " + t + " ")
+				w := lipgloss.Width(lbl)
+				if leftW+w <= budget {
+					left = append([]string{lbl}, left...)
+					leftW += w
+					budget -= w
+					added = true
+				}
+				l--
+			}
+			if !added {
+				break
+			}
+		}
+		line = strings.Join(left, "") + selLabel + strings.Join(right, "")
+		if m.folderIdx > 0 {
+			line = mutedStyle.Render("‹") + line
+		}
+		if m.folderIdx < len(m.folders)-1 {
+			line = line + mutedStyle.Render("›")
+		}
+	}
+	return truncateStyled(line, width)
 }
 
 func (m model) renderChatList(w, h int) string {
@@ -891,21 +1107,25 @@ func (m model) renderChatList(w, h int) string {
 		innerH = 1
 	}
 
-	displayChats := m.chats
+	baseChats := m.folderChats()
 	searching := m.search == searchChats
+	displayChats := baseChats
 	if searching {
-		displayChats = m.filteredChats()
+		displayChats = m.displayChats()
 	}
 
 	title := accentStyle.Render(" Чаты ")
 	if searching {
-		title += mutedStyle.Render(fmt.Sprintf("(%d/%d)", len(displayChats), len(m.chats)))
-	} else if len(m.chats) > 0 {
-		title += mutedStyle.Render(fmt.Sprintf("(%d)", len(m.chats)))
+		title += mutedStyle.Render(fmt.Sprintf("(%d/%d)", len(displayChats), len(baseChats)))
+	} else if len(baseChats) > 0 {
+		title += mutedStyle.Render(fmt.Sprintf("(%d)", len(baseChats)))
 	}
 
 	var lines []string
 	lines = append(lines, title)
+	if len(m.folders) > 0 {
+		lines = append(lines, m.renderFolderTabs(innerW))
+	}
 	if searching {
 		lines = append(lines, statusWarnStyle.Render("/"+m.searchQuery+"▌"))
 	}
@@ -919,12 +1139,19 @@ func (m model) renderChatList(w, h int) string {
 			lines = append(lines, statusWarnStyle.Render(" Нужна авторизация:"))
 			lines = append(lines, mutedStyle.Render(" maxplus-daemon login"))
 		}
-	} else if searching && len(displayChats) == 0 {
-		lines = append(lines, mutedStyle.Render(" Нет совпадений"))
+	} else if len(displayChats) == 0 {
+		if searching {
+			lines = append(lines, mutedStyle.Render(" Нет совпадений"))
+		} else {
+			lines = append(lines, mutedStyle.Render(" Нет чатов в папке"))
+		}
 	} else {
 		headerLines := 1
+		if len(m.folders) > 0 {
+			headerLines++
+		}
 		if searching {
-			headerLines = 2
+			headerLines++
 		}
 		visibleItems := (innerH - headerLines) / 2
 		if visibleItems < 1 {
@@ -1285,6 +1512,37 @@ func truncateLeft(s string, w int) string {
 		return string(r[len(r)-w:])
 	}
 	return "…" + string(r[len(r)-(w-1):])
+}
+
+func truncateStyled(s string, w int) string {
+	if w <= 0 || lipgloss.Width(s) <= w {
+		return s
+	}
+	// Simple ANSI-aware truncation
+	var out strings.Builder
+	visible := 0
+	inEsc := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEsc = true
+			out.WriteRune(r)
+			continue
+		}
+		if inEsc {
+			out.WriteRune(r)
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEsc = false
+			}
+			continue
+		}
+		if visible >= w {
+			break
+		}
+		out.WriteRune(r)
+		visible++
+	}
+	out.WriteString("\x1b[0m")
+	return out.String()
 }
 
 func wrapText(s string, width int) []string {
